@@ -1,6 +1,4 @@
-#include "ESPNOWSerial.h"
 #include "ESPNOW_device.h"
-#include "ESPNOW_device_defines.h"
 
 #include "DRV8833.h"
 

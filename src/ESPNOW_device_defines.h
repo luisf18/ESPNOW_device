@@ -1,3 +1,5 @@
+#ifndef ESPNOW_DEVICE_DEFINES_H
+#define ESPNOW_DEVICE_DEFINES_H
 
 // ====================================================================== //
 //  DEVICE SERVICE                                                        //
@@ -118,3 +120,5 @@ typedef struct{
     //  uint32_t color_rgb = 0xF00000;
     //  uint32_t service   = 0; //ROBOT | DDR | SUMO | RAMP; // tipo de serviço que o dispositivo de origem esta prestando
     //}device_t;
+
+#endif
