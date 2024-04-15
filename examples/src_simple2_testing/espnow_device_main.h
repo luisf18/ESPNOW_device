@@ -1,6 +1,3 @@
-#ifndef ESPNOW_DEVICE_H
-#define ESPNOW_DEVICE_H
-
 #ifdef ESP32
   #include <esp_mac.h>
   #include <esp_now.h>
@@ -467,6 +464,3 @@ ESPNOW_DEVICE ESPNOW_device;
 void espnow_device_recive(const uint8_t * mac,const uint8_t *data, int len){
   ESPNOW_device.recive( mac, data, len );
 }
-
-
-#endif

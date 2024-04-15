@@ -1,7 +1,3 @@
-#include "ESPNOW_device.h"
-
-#include "DRV8833.h"
-
 /*/
 UPLOAD Date:
 Oct  8 2023
@@ -11,11 +7,57 @@ Running sketch:
 bots_vsss.ino
 /*/
 
+#include "ESPNOW_device.h"
+
+////////////////////////////////////////////////////////////
+// Motor                                                  //
+////////////////////////////////////////////////////////////
+#include "DRV8833.h"
+DRV8833 motor( 12,13,4,5 );
+
+////////////////////////////////////////////////////////////
+// LED                                                    //
+////////////////////////////////////////////////////////////
+class LED{
+  private:
+  bool EN = false;
+  int  Pin = -1;
+  bool State_on = HIGH;
+  bool Blink = false;
+  uint32_t timeout = 0;
+  uint32_t Dt;
+  public:
+  void begin(int pin, bool state_on){
+    if(pin>=0){
+      EN = true;
+      Pin = pin;
+      State_on = state_on;
+      pinMode(Pin,OUTPUT);
+      digitalWrite(Pin,!State_on);
+    }
+  }
+  void on(){  Blink = false; digitalWrite(Pin,State_on);  }
+  void off(){ Blink = false; digitalWrite(Pin,!State_on); }
+  void blink( uint32_t dt ){
+    if(!EN) return;
+    Blink = true;
+    Dt = dt;
+  }
+  void update(){
+    if(!Blink) return;
+    if( timeout <= millis() ){
+      timeout = millis() + Dt;
+      digitalWrite( Pin, !digitalRead(Pin) );
+    }
+  }
+};
+
+LED led;
+
+
 float fmap( float x, float in_m, float in_M, float out_m, float out_M ){
   return ( in_m == in_M ? out_m : (x-in_m)*(out_M-out_m)/(in_M-in_m)+out_m );
 }
-
-DRV8833 motor( 12,13,4,5 );
 
 battery_monitor_t battery;
 
@@ -45,18 +87,22 @@ void handle_espnow(int event){
     }
   }else if( event == ESPNOW_device.EVT_RISE_CONNECTION ){
     Serial.println("[RISE]");
-    digitalWrite( 2, LOW );
+    led.on();
   }else if( event == ESPNOW_device.EVT_FALL_CONNECTION ){
     motor.stop();
-    digitalWrite( 2, HIGH );
+    led.off();
     Serial.println("[FALL]");
     motor.bip(3,100,3000);
   }else if( event == ESPNOW_device.EVT_SEND ){
     battery.cells = 2;
     battery.voltage = getBatteryVoltage();
+
+    // update led
+    if( battery.voltage < 6.6 ) led.blink( ESPNOW_device.connected() ? 80 : 400 );
+    else if(ESPNOW_device.online()) led.on();
+    else led.off();
+
     ESPNOW_device.add_service(  ESPNOW_DEVICE_SERVICE__BATTERY_MONITOR, (uint8_t*) &battery, sizeof(battery) );
-    //Serial.println( ESPNOW_device.add_service(  ESPNOW_DEVICE_SERVICE__BATTERY_MONITOR, (uint8_t*) &battery, sizeof(battery) ) ? "-> PASS OK!" : "-> PASS Fail!" );
-    //ESPNOW_device.list_services( &ESPNOW_device.data_out );
   }else if( event == ESPNOW_device.EVT_LOST_CONNECTION ){
     Serial.println("[ LOST CONNECTION!! ]");
   }
@@ -93,9 +139,8 @@ void setup() {
   ESPNOW_device.set_mode( ESPNOW_device.CONNECTING );
   //ESPNOW_device.connect( config.devices[ config.sel_device ].name );
 
-  // Pinmode
-  pinMode(2,OUTPUT);
-  digitalWrite( 2, LOW );
+  // LED
+  led.begin(2,LOW);
 
   motor.begin();
   motor.bip(2,200,2000);
@@ -106,6 +151,7 @@ void loop() {
   
   Terminal_loop();
   ESPNOW_device.update();
+  led.update();
 
 }
 
