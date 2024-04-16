@@ -269,6 +269,19 @@ class ESPNOW_DEVICE{
     uint8_t connections_counter_max = 1;
     uint8_t connections_counter = 0;
     ESPNOW_device_connection connections[ESPNOW_DEVICE_CONNECTIONS_MAX];
+    bool    single_server = false;
+    
+    // timing
+    uint32_t waiting_ms_disconnect = 500;
+    uint32_t delay_ms_notify       = 50;
+
+    uint8_t connections_made(){
+      uint8_t count = 0;
+      for(int i=0;i<connections_counter;i++){
+        if( connections[i].connected() ) count++;
+      }
+      return count;
+    }
     
     //----------------------------------------------------------------------------------------
     // LED
@@ -370,6 +383,8 @@ class ESPNOW_DEVICE{
       if( connections_counter >= connections_counter_max ) return false;
       connections[connections_counter].connect_server( _name, _password );
       connections[connections_counter].set_mac( mac );
+      connections[connections_counter].delay_ms_notify = delay_ms_notify;
+      connections[connections_counter].waiting_ms_disconnect = waiting_ms_disconnect;
       connections_counter++;
       return true;
     }
@@ -378,6 +393,8 @@ class ESPNOW_DEVICE{
       if( ESPNOW_DEVICE_SERVER ) return false;
       if( connections_counter >= connections_counter_max ) return false;
       connections[connections_counter].connect_server( _name, _password );
+      connections[connections_counter].delay_ms_notify = delay_ms_notify;
+      connections[connections_counter].waiting_ms_disconnect = waiting_ms_disconnect;
       connections_counter++;
       return true;
     }
@@ -390,8 +407,15 @@ class ESPNOW_DEVICE{
 
       bool led_act = false;
 
+      uint8_t n_connections = connections_counter;
+
+      // se for um client single server
+      if( !ESPNOW_DEVICE_SERVER && single_server ){
+        if( connections[0].connected() ) n_connections = 1;
+      }
+
       // update all connections
-      for(int i=0;i<connections_counter;i++){
+      for(int i=0;i<n_connections;i++){
 
         bool notify = connections[ i ].update_flags();
         
@@ -451,8 +475,16 @@ class ESPNOW_DEVICE{
       
       if( pack->code != ESPNOW_DEVICE_CODE ) return;
 
-      // update all connections
-      for(int i=0;i<connections_counter;i++){
+      uint8_t n_connections = connections_counter;
+
+      // se for um client single server
+      if( !ESPNOW_DEVICE_SERVER && single_server ){
+        if( connections[0].connected() ) n_connections = 1;
+      }
+
+      // check all connections
+      for(int i=0;i<n_connections;i++){
+        
         if( strcmp( connections[i].remote_name, pack->name ) == 0 ){
 
           if( !ESPNOW_DEVICE_SERVER ){
@@ -461,12 +493,21 @@ class ESPNOW_DEVICE{
                 Serial.printf( "[found server MAC]\n", i );
               }
               connections[ i ].set_mac( mac );
+              if( single_server ){
+                ESPNOW_device_connection cnn_temp = connections[ 0 ];
+                connections[ 0 ] = connections[ i ];
+                connections[ i ] = cnn_temp;
+                i = 0;
+                n_connections = 1;
+              }
             }
           }
           
           if( memcmp( connections[ i ].remote_mac, mac, 6 ) != 0 ) return;
           
-          Serial.printf( "[name: %s connection: %d]\n", connections[ i ].remote_name, i );
+          if( ESPNOW_DEVICE_LOG_DEBUG ){
+            Serial.printf( "[name: %s connection: %d]\n", connections[ i ].remote_name, i );
+          }
           connections[ i ].update_recive();
           connections[ i ].frame_in = *pack;
 

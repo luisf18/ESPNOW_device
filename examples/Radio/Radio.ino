@@ -40,9 +40,10 @@ uint32_t px_color = PX_RED;
 
 #define COLOR_ON_CALIBRATION    PX_RED
 #define COLOR_ON                PX_BLUE // COLOR_azul_claro
-#define COLOR_CONNECT           COLOR_lilas
 #define COLOR_RADIO_LOW_BATTERY PX_RED
 #define COLOR_ROBOT_LOW_BATTERY COLOR_amarelo
+
+uint32_t COLOR_CONNECT = PX_GREEN;
 
 void px_set_color_raw( uint32_t _px_color ){
   PX.set(_px_color,0);
@@ -54,6 +55,22 @@ void px_set_color( uint32_t _px_color ){
   PX.set(px_color,0);
   PX.write();
 }
+
+// =================================================================
+// Robots list
+// =================================================================
+
+class robot_connection{
+  public:
+    const char * name     = "ROBOT";
+    const char * password = "1234";
+    uint32_t     color    = 0x0000FF;
+    // Construtor que recebe valores de variáveis
+    robot_connection(const char *name, const char *password, uint32_t color) : name(name), password(password), color(color) {}
+};
+
+robot_connection ROBOT(  "ROBOT",  "1324", COLOR_lilas           );
+robot_connection SERVER( "SERVER", "1234", COLOR_azul_esverdeado );
 
 // =================================================================
 // Battery voltage
@@ -185,6 +202,13 @@ void espnow_handle( espnow_device_event_t ev, int id ){
   
   }else if( ev == ESPNOW_EVT_CONNECTED ){
 
+    COLOR_CONNECT = PX_GREEN;
+
+    const char * name = ESPNOW_device.connections[id].remote_name;
+
+    if( strncmp( name, ROBOT.name , ESPNOW_DEVICE_NAME_SIZE ) == 0 ) COLOR_CONNECT = ROBOT.color;
+    if( strncmp( name, SERVER.name, ESPNOW_DEVICE_NAME_SIZE ) == 0 ) COLOR_CONNECT = SERVER.color;
+
     px_set_color( COLOR_CONNECT );
     Serial.printf( "[RISE -> %s]\n", ( id >= 0 ? ESPNOW_device.connections[id].remote_name : "broadcast" ) );
     bip( 1, 50 );
@@ -254,12 +278,16 @@ void setup() {
 
   // ESPNOW_device
   Serial.println( "======== ESPNOW Device Client ========" );
-  ESPNOW_device.set_led( LED );
   ESPNOW_device.set_handle_function( espnow_handle );
-  ESPNOW_device.connections[0].waiting_ms_disconnect = 500;
+  ESPNOW_device.connections_counter_max = 2;
+  ESPNOW_device.single_server = true;
+  ESPNOW_device.set_led( LED );
+  ESPNOW_device.waiting_ms_disconnect = 500;
+  ESPNOW_device.delay_ms_notify       = 50;
+
   ESPNOW_device.begin_client( "RADIO" );
   ESPNOW_device.connect( "ROBOT", "1324" );
-  ESPNOW_device.connections[0].delay_ms_notify = 50;
+  ESPNOW_device.connect( "SERVER", "1324" );
 
 }
 
