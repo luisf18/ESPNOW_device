@@ -1,7 +1,7 @@
 #include "ESPNOW_device.h"
 
 // comment to upload to client
-//#define SERVER
+#define SERVER
 
 void espnow_handle(espnow_device_event_t ev, int id){
   if( ev == ESPNOW_EVT_NOTIFY ){
@@ -46,4 +46,8 @@ void setup() {
 
 void loop() {
   ESPNOW_device.update();
+  if( !digitalRead(0) ){
+    delay(250);
+    ESPNOW_device.deinit();
+  }
 }

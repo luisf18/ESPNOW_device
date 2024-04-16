@@ -36,6 +36,7 @@ const uint8_t espnow_device_broadcast_mac[6]  = {0xFF,0xFF,0xFF,0xFF,0xFF,0xFF};
 char   ESPNOW_DEVICE_NAME[ ESPNOW_DEVICE_NAME_SIZE ] = "SERVER";
 String ESPNOW_DEVICE_PASSWORD                        = "1234";
 bool   ESPNOW_DEVICE_SERVER                          = true;
+bool   ESPNOW_DEVICE_LOG_DEBUG                       = false;
 
 
 //========================================================================================
@@ -65,7 +66,12 @@ bool peer( const uint8_t *mac, esp_now_peer_info_t *peerInfo ){
   //peerInfo->channel = espnow_device_channel;
   peerInfo->encrypt = false;
   // Add peer
-  if (esp_now_add_peer(peerInfo) != ESP_OK){ Serial.println("Failed to add peer"); return false; }
+  if (esp_now_add_peer(peerInfo) != ESP_OK){
+    if( ESPNOW_DEVICE_LOG_DEBUG ){
+      Serial.println("Failed to add peer");
+    }
+    return false;
+  }
   return true;
 }
 
@@ -132,11 +138,15 @@ class ESPNOW_device_connection{
     #endif
     searching_mac = false;
 
-    if( memcmp( mac, espnow_device_broadcast_mac, 6 ) == 0 ){
-      Serial.println( ">> connect broadcast notifier!" );
-    }else{
-      Serial.printf( ">> connect to remote %s %s!\n", (ESPNOW_DEVICE_SERVER?"client":"server"), remote_name );
+    // logging
+    if( ESPNOW_DEVICE_LOG_DEBUG ){
+      if( memcmp( mac, espnow_device_broadcast_mac, 6 ) == 0 ){
+        Serial.println( ">> connect broadcast notifier!" );
+      }else{
+        Serial.printf( ">> connect to remote %s %s!\n", (ESPNOW_DEVICE_SERVER?"client":"server"), remote_name );
+      }
     }
+
   }
   
   // conexão em um server
@@ -155,7 +165,10 @@ class ESPNOW_device_connection{
     Connected = false;
     searching_mac = true;
 
-    Serial.printf( ">> request connection to server %s!\n", name);
+    if( ESPNOW_DEVICE_LOG_DEBUG ){
+      Serial.printf( ">> request connection to server %s!\n", name);
+    }
+
   }
 
 
@@ -280,15 +293,19 @@ class ESPNOW_DEVICE{
     // INIT
     //----------------------------------------------------------------------------------------
     bool init(){
-
       WiFi.disconnect();
       WiFi.mode(WIFI_STA);
       //ESP_ERROR_CHECK( esp_wifi_set_channel(espnow_device_channel,WIFI_SECOND_CHAN_NONE) );
       if(esp_now_init() != 0){
-        Serial.println("[Error] initializing ESP-NOW");
+        if( ESPNOW_DEVICE_LOG_DEBUG ){
+          Serial.println("[Error] initializing ESP-NOW");
+        }
         return false;
       }
-      Serial.println("\n\nBEGIN ESPNOW!!");
+      
+      if( ESPNOW_DEVICE_LOG_DEBUG ){
+        Serial.println("ESPNNOW init!!");
+      }
 
       connection_led = false;
       connection_led_change = true;
@@ -304,11 +321,26 @@ class ESPNOW_DEVICE{
       uint8_t primary;
       wifi_second_chan_t second;
       esp_wifi_get_channel(&primary, &second);
-      Serial.printf(  "[ESPNOW] channel: %d\t%d\n",primary,second);
-      Serial.print(   "[ESPNOW] MAC:  ");Serial.println(WiFi.macAddress());
-      Serial.println( "[ESPNOW Device] begin!" );
+
+      if( ESPNOW_DEVICE_LOG_DEBUG ){
+        Serial.printf(  "[ESPNOW] channel: %d\t%d\n",primary,second);
+        Serial.print(   "[ESPNOW] MAC:  ");Serial.println(WiFi.macAddress());
+        Serial.println( "[ESPNOW Device] begin!" );
+      }
+
+      if( ESPNOW_DEVICE_SERVER ){
+        // notifier
+        notifier.connect_client( ESPNOW_DEVICE_NAME, espnow_device_broadcast_mac );
+      }
 
       return true;
+    }
+
+    // deinit
+    void deinit(){
+      esp_now_deinit();
+      WiFi.disconnect();
+      WiFi.mode(WIFI_OFF);
     }
 
     //----------------------------------------------------------------------------------------
@@ -320,8 +352,6 @@ class ESPNOW_DEVICE{
       strncpy( ESPNOW_DEVICE_NAME, name, ESPNOW_DEVICE_NAME_SIZE );
       ESPNOW_DEVICE_PASSWORD = password;
       init();
-      // notifier
-      notifier.connect_client( ESPNOW_DEVICE_NAME, espnow_device_broadcast_mac );
     }
 
     void begin_client( const char * name = "CLIENT" ){
@@ -413,7 +443,9 @@ class ESPNOW_DEVICE{
     // ------------------------------------------------------------------------------------
     void recive(const uint8_t * mac,const uint8_t *data, int len){
       
-      Serial.printf( "\n\n-> recive: %s [%d]\n", mac2str(mac).c_str(), len );
+      if( ESPNOW_DEVICE_LOG_DEBUG ){
+        Serial.printf( "\n\n-> recive: %s [%d]\n", mac2str(mac).c_str(), len );
+      }
 
       espnow_device_frame_t *pack = (espnow_device_frame_t*) data;
       
@@ -425,7 +457,9 @@ class ESPNOW_DEVICE{
 
           if( !ESPNOW_DEVICE_SERVER ){
             if( connections[ i ].searching_mac ){
-              Serial.printf( "[found server MAC]\n", i );
+              if( ESPNOW_DEVICE_LOG_DEBUG ){
+                Serial.printf( "[found server MAC]\n", i );
+              }
               connections[ i ].set_mac( mac );
             }
           }
@@ -448,7 +482,9 @@ class ESPNOW_DEVICE{
         if( strncmp(pack->name_rx, ESPNOW_DEVICE_NAME, ESPNOW_DEVICE_NAME_SIZE ) == 0 ){
           connections[ connections_counter ].connect_client( pack->name, mac);
           connections[ connections_counter ].frame_in = *pack;
-          Serial.printf( "[name: %s connection: %d]\n", connections[ connections_counter ].remote_name, connections_counter );
+          if( ESPNOW_DEVICE_LOG_DEBUG ){
+            Serial.printf( "[name: %s connection: %d]\n", connections[ connections_counter ].remote_name, connections_counter );
+          }
           connections_counter++;
 
           if( connections[ connections_counter-1 ].rise() ) call( ESPNOW_EVT_CONNECTED, connections_counter-1 );
