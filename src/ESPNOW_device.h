@@ -36,7 +36,7 @@ const uint8_t espnow_device_broadcast_mac[6]  = {0xFF,0xFF,0xFF,0xFF,0xFF,0xFF};
 char   ESPNOW_DEVICE_NAME[ ESPNOW_DEVICE_NAME_SIZE ] = "SERVER";
 String ESPNOW_DEVICE_PASSWORD                        = "1234";
 bool   ESPNOW_DEVICE_SERVER                          = true;
-bool   ESPNOW_DEVICE_LOG_DEBUG                       = false;
+bool   ESPNOW_DEVICE_LOG_DEBUG                       = false; // <- logging
 
 
 //========================================================================================
@@ -60,20 +60,56 @@ typedef struct{
 // basic functions
 //========================================================================================
 
+#ifdef ESP32
 bool peer( const uint8_t *mac, esp_now_peer_info_t *peerInfo ){
-  // Register peer device
-  memcpy(peerInfo->peer_addr, mac, 6);
-  //peerInfo->channel = espnow_device_channel;
-  peerInfo->encrypt = false;
-  // Add peer
-  if (esp_now_add_peer(peerInfo) != ESP_OK){
-    if( ESPNOW_DEVICE_LOG_DEBUG ){
-      Serial.println("Failed to add peer");
+    // Register peer device
+    memcpy(peerInfo->peer_addr, mac, 6);
+    //peerInfo->channel = espnow_device_channel;
+    peerInfo->encrypt = false;
+    // Add peer
+    if (esp_now_add_peer(peerInfo) != ESP_OK){
+      if( ESPNOW_DEVICE_LOG_DEBUG ){
+        Serial.println("Failed to add peer");
+      }
+      return false;
     }
-    return false;
-  }
   return true;
 }
+#elif defined( ESP8266 )
+bool peer( const uint8_t *mac ){
+  uint8_t channel = 1;
+  esp_now_add_peer( (uint8_t*) mac, ESP_NOW_ROLE_COMBO, channel, NULL, 0);
+  return true;
+}
+#endif
+
+// Ler o canal Wi-Fi
+uint8_t espnow_device_get_channel(){
+  #ifdef ESP32
+    uint8_t primary;
+    wifi_second_chan_t channel_info;
+    esp_wifi_get_channel(&primary, &channel_info);
+    return primary;
+  #elif defined( ESP8266 )
+    return WiFi.channel();
+  #endif
+}
+
+/*/
+// extraido do "espRadio.h"
+// avaliar adição...
+boolean del_peer( uint8_t *mac ){
+  boolean ok = true;
+  #if defined(ESP32)
+    esp_err_t Status = esp_now_del_peer(mac);
+    //log_err(Status);
+    ok = (Status == ESP_OK || Status == ESP_ERR_ESPNOW_EXIST );
+  #elif defined(ESP8266)
+    esp_now_del_peer( mac );
+  #endif
+  return ok;
+}
+/*/
 
 String mac2str(const uint8_t *mac ){
   char char_str[18];
@@ -82,7 +118,11 @@ String mac2str(const uint8_t *mac ){
 }
 
 // callback functions
-void espnow_device_recive(const uint8_t * mac,const uint8_t *incomingData, int len);
+#ifdef ESP32
+void espnow_device_recive(const uint8_t * mac,const uint8_t *data, int len);
+#elif defined( ESP8266 )
+void espnow_device_recive( uint8_t * mac, uint8_t *data, uint8_t len);
+#endif
 
 
 //========================================================================================
@@ -204,7 +244,9 @@ class ESPNOW_device_connection{
 
   // envia frame_out
   void send(){
+    cli();
     esp_now_send( remote_mac, (uint8_t*)&frame_out, sizeof(frame_out) - (ESPNOW_DEVICE_BODY_SIZE-frame_out.len) );
+    sei();
   }
 
   // ---------------------------------------------------------------------
@@ -286,12 +328,14 @@ class ESPNOW_DEVICE{
     //----------------------------------------------------------------------------------------
     // LED
     //----------------------------------------------------------------------------------------
-    bool connection_led_change = false;
-    bool connection_led        = false;
-    int  connection_led_pin    = -1;
+    bool connection_led_change   = false;
+    bool connection_led          = false;
+    int  connection_led_pin      = -1;
+    bool connection_led_state_on = HIGH;
     
-    void set_led( int pin ){
+    void set_led( int pin, bool state_on = HIGH ){
       connection_led_pin = pin;
+      connection_led_state_on = state_on;
     }
 
     //----------------------------------------------------------------------------------------
@@ -323,7 +367,7 @@ class ESPNOW_DEVICE{
       connection_led = false;
       connection_led_change = true;
 
-      #ifndef ESP32
+      #ifdef ESP8266
       esp_now_set_self_role(ESP_NOW_ROLE_COMBO);
       #endif
 
@@ -331,12 +375,8 @@ class ESPNOW_DEVICE{
       esp_now_register_recv_cb(espnow_device_recive);
 
       // diagnostico
-      uint8_t primary;
-      wifi_second_chan_t second;
-      esp_wifi_get_channel(&primary, &second);
-
       if( ESPNOW_DEVICE_LOG_DEBUG ){
-        Serial.printf(  "[ESPNOW] channel: %d\t%d\n",primary,second);
+        Serial.printf(  "[ESPNOW] channel: %d\t%d\n", espnow_device_get_channel() );
         Serial.print(   "[ESPNOW] MAC:  ");Serial.println(WiFi.macAddress());
         Serial.println( "[ESPNOW Device] begin!" );
       }
@@ -344,6 +384,8 @@ class ESPNOW_DEVICE{
       if( ESPNOW_DEVICE_SERVER ){
         // notifier
         notifier.connect_client( ESPNOW_DEVICE_NAME, espnow_device_broadcast_mac );
+        notifier.delay_ms_notify = delay_ms_notify;
+        notifier.waiting_ms_disconnect = waiting_ms_disconnect;
       }
 
       return true;
@@ -419,7 +461,7 @@ class ESPNOW_DEVICE{
 
         bool notify = connections[ i ].update_flags();
         
-        if( !connections[ i ].Connected ){
+        if( !connections[ i ].Connected ){ // perdeu connexão
           
           if( connections[ i ].fall() ){
             call( ESPNOW_EVT_DISCONNECTED, i );
@@ -431,6 +473,7 @@ class ESPNOW_DEVICE{
               connections[j-1] = connections[j];
             i--; // o atual é deletado necessitando reiniciar a leitura
             connections_counter--;
+            n_connections--;
           }else{
             connections[ i ].searching_mac = true;
           }
@@ -457,7 +500,7 @@ class ESPNOW_DEVICE{
       connection_led_change = ( led_act != connection_led );
       if( connection_led_change ){
         connection_led = led_act;
-        if( connection_led_pin >= 0 ) digitalWrite(connection_led_pin,connection_led);
+        if( connection_led_pin >= 0 ) digitalWrite(connection_led_pin, connection_led == connection_led_state_on );
       }
 
     }
@@ -471,7 +514,17 @@ class ESPNOW_DEVICE{
         Serial.printf( "\n\n-> recive: %s [%d]\n", mac2str(mac).c_str(), len );
       }
 
-      espnow_device_frame_t *pack = (espnow_device_frame_t*) data;
+      #ifdef ESP8266
+        espnow_device_frame_t _pack;
+        espnow_device_frame_t *pack = &_pack;
+        memcpy( (uint8_t*)pack, data, len );
+      #else
+        espnow_device_frame_t *pack = (espnow_device_frame_t*) data;
+      #endif
+
+      if( ESPNOW_DEVICE_LOG_DEBUG ){
+        Serial.printf( "[name: %s][code: %d ][connection counter: %d ]\n", pack->name, pack->code, connections_counter );
+      }
       
       if( pack->code != ESPNOW_DEVICE_CODE ) return;
 
@@ -482,16 +535,29 @@ class ESPNOW_DEVICE{
         if( connections[0].connected() ) n_connections = 1;
       }
 
+
       // check all connections
       for(int i=0;i<n_connections;i++){
-        
-        if( strcmp( connections[i].remote_name, pack->name ) == 0 ){
 
+        if( strcmp( connections[i].remote_name, pack->name ) == 0 ){
+          
+          // log
+          if( ESPNOW_DEVICE_LOG_DEBUG ){
+            Serial.printf( "[*%d*]\n",i);
+          }
+        
+          // Local Client
           if( !ESPNOW_DEVICE_SERVER ){
+            
+            // se estiver buscando um dispositivo
             if( connections[ i ].searching_mac ){
+              
+              //log
               if( ESPNOW_DEVICE_LOG_DEBUG ){
                 Serial.printf( "[found server MAC]\n", i );
               }
+              
+              // 
               connections[ i ].set_mac( mac );
               if( single_server ){
                 ESPNOW_device_connection cnn_temp = connections[ 0 ];
@@ -500,6 +566,7 @@ class ESPNOW_DEVICE{
                 i = 0;
                 n_connections = 1;
               }
+
             }
           }
           
@@ -508,6 +575,7 @@ class ESPNOW_DEVICE{
           if( ESPNOW_DEVICE_LOG_DEBUG ){
             Serial.printf( "[name: %s connection: %d]\n", connections[ i ].remote_name, i );
           }
+
           connections[ i ].update_recive();
           connections[ i ].frame_in = *pack;
 
@@ -515,14 +583,20 @@ class ESPNOW_DEVICE{
           call( ESPNOW_EVT_RECIVE, i );
 
           return;
+
         }
+
       }
 
       if( ESPNOW_DEVICE_SERVER && connections_counter<connections_counter_max ){
         // [ decode aqui ]
         if( strncmp(pack->name_rx, ESPNOW_DEVICE_NAME, ESPNOW_DEVICE_NAME_SIZE ) == 0 ){
+          
           connections[ connections_counter ].connect_client( pack->name, mac);
           connections[ connections_counter ].frame_in = *pack;
+          connections[ connections_counter ].delay_ms_notify = delay_ms_notify;
+          connections[ connections_counter ].waiting_ms_disconnect = waiting_ms_disconnect;
+
           if( ESPNOW_DEVICE_LOG_DEBUG ){
             Serial.printf( "[name: %s connection: %d]\n", connections[ connections_counter ].remote_name, connections_counter );
           }
@@ -541,9 +615,14 @@ ESPNOW_DEVICE ESPNOW_device;
 // ===============================================================================
 // External callback functions
 // ===============================================================================
+#ifdef ESP32
 void espnow_device_recive(const uint8_t * mac,const uint8_t *data, int len){
   ESPNOW_device.recive( mac, data, len );
 }
-
+#elif defined( ESP8266 )
+void espnow_device_recive( uint8_t * mac, uint8_t *data, uint8_t len){
+  ESPNOW_device.recive( mac, data, len );
+}
+#endif
 
 #endif
