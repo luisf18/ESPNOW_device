@@ -170,6 +170,7 @@ class ESPNOW_device_connection{
 
   // set mac
   void set_mac( const uint8_t *mac ){
+    
     memcpy( remote_mac, mac, 6 );
     #ifdef ESP32
       peer( remote_mac, &peerInfo );
@@ -305,7 +306,7 @@ class ESPNOW_DEVICE{
     //----------------------------------------------------------------------------------------
     // connexões
     //----------------------------------------------------------------------------------------
-    
+    bool    espnow_device_init = false;
     ESPNOW_device_connection notifier;
     //bool    always_public_notify = false;
     uint8_t connections_counter_max = 1;
@@ -388,11 +389,14 @@ class ESPNOW_DEVICE{
         notifier.waiting_ms_disconnect = waiting_ms_disconnect;
       }
 
+      espnow_device_init = true;
+
       return true;
     }
 
     // deinit
     void deinit(){
+      espnow_device_init = false;
       esp_now_deinit();
       WiFi.disconnect();
       WiFi.mode(WIFI_OFF);
@@ -446,6 +450,8 @@ class ESPNOW_DEVICE{
     //----------------------------------------------------------------------------------------
 
     void update(){
+
+      if( !espnow_device_init ) return;
 
       bool led_act = false;
 
@@ -509,6 +515,8 @@ class ESPNOW_DEVICE{
     // callback
     // ------------------------------------------------------------------------------------
     void recive(const uint8_t * mac,const uint8_t *data, int len){
+
+      if( !espnow_device_init ) return;
       
       if( ESPNOW_DEVICE_LOG_DEBUG ){
         Serial.printf( "\n\n-> recive: %s [%d]\n", mac2str(mac).c_str(), len );
