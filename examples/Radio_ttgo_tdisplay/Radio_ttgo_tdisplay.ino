@@ -23,7 +23,7 @@ const char *__FIRMWARE__ = __FILE__;
 #define CH5     -1   // SWA (Mode)
 #define LED     -1   // LED
 #define NEW_LED CH3 // 
-#define BUZZER  -1
+#define BUZZER  36
 #define BATTERY -1
 
 // =================================================================
