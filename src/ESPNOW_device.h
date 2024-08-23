@@ -255,13 +255,16 @@ class ESPNOW_device_connection{
   // ---------------------------------------------------------------------
 
   bool update_flags( bool broadcast_notifier = false ){
+    cli();
     // broadcast notifier
     uint32_t time = millis();
     if( broadcast_notifier ){
       if( time >= Timeout_notify ){
         Timeout_notify = time + delay_ms_notify;
+        sei();
         return true;
       }
+      sei();
       return false;
     }
     
@@ -278,6 +281,7 @@ class ESPNOW_device_connection{
       }
     }
 
+    sei();
     return notify;
   }
 
@@ -286,10 +290,12 @@ class ESPNOW_device_connection{
   }
 
   void update_recive(){
+    cli();
     uint32_t time = millis();
     Timeout_disconnect = time + waiting_ms_disconnect;
     Change = !Connected;
     Connected = true;
+    sei();
   }
 
 };
