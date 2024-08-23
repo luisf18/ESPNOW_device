@@ -1,4 +1,4 @@
-#include "ESPNOW_DEVICE.h"
+#include "ESPNOW_device.h"
 
 #define ESP32C3 // comente se não for esp32c3
 
@@ -51,6 +51,7 @@ void setup() {
   ESPNOW_device.enable_scan();
 
   pinMode(LED,OUTPUT);
+  digitalWrite(LED,!LED_ON);
 }
 
 void loop() {
