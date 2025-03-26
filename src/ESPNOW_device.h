@@ -1,3 +1,8 @@
+#ifndef ESPNOW_DEVICE_H
+#define ESPNOW_DEVICE_H
+
+#include "ESPNOW_device_services.h"
+
 //========================================================================================
 // ESPNOW Device V1
 // Client e Server
@@ -361,11 +366,12 @@ class ESPNOW_DEVICE{
 
         if( auto_disconnect ){
           cli();
-          if( (millis() - Connections[i].last_time_recive) >= disconnect_delay ){
+          bool disconnected = (millis() - Connections[i].last_time_recive) >= disconnect_delay;
+          sei();
+          if( disconnected ){
             //Serial.printf( "last recive time: %d\n", millis() - Connections[i].last_time_recive );
             close_connection( Connections[i].name );
           }
-          sei();
         }
 
       }
@@ -592,4 +598,6 @@ void espnow_device_recive(const uint8_t * mac,const uint8_t *data, int len){
 void espnow_device_recive( uint8_t * mac, uint8_t *data, uint8_t len){
   ESPNOW_device.recive( mac, data, len );
 }
+#endif
+
 #endif
