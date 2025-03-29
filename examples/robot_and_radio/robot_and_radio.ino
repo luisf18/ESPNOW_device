@@ -36,21 +36,22 @@ void espnow_handle(espnow_device_event_t ev, int id){
     Serial.printf( "[NOTIFY %d]\n", id );
 
     #ifdef ROBOT
-      ESPNOW_device.connections[0].frame_out.service = ESPNOW_DEVICE_NOTIFY_SERVICE;
-      ESPNOW_device.connections[0].frame_out.len = sizeof( notify_t );
-      notify_t *notify_pack = (notify_t*) ESPNOW_device.connections[0].frame_out.body;
+      ESPNOW_device.frame_out.service = ESPNOW_DEVICE_NOTIFY_SERVICE;
+      ESPNOW_device.frame_out.len = sizeof( notify_t );
+      notify_t *notify_pack = (notify_t*) ESPNOW_device.frame_out.body;
       notify_pack->cells   = 2;
       notify_pack->voltage = ((28.186 - 0.886)/4095.0)*(float)analogRead( 36 ) + 0.886;
       notify_pack->level   = constrain( 100*( notify_pack->voltage/(float)notify_pack->cells - 3.6 )/(4.2-3.6), 0, 100 );
     #else
-      ESPNOW_device.connections[0].frame_out.service = ESPNOW_DEVICE_CHANNEL_SERVICE;
-      ESPNOW_device.connections[0].frame_out.len = sizeof(int)*2;
-      int *ch = (int*) ESPNOW_device.connections[0].frame_out.body;
+      ESPNOW_device.frame_out.service = ESPNOW_DEVICE_CHANNEL_SERVICE;
+      ESPNOW_device.frame_out.len = sizeof(int)*2;
+      int *ch = (int*) ESPNOW_device.frame_out.body;
       ch[0] = 1500;
       ch[1] = ( digitalRead(0) ? 1500 : 2000 );
     #endif
 
-  }else if( ev == ESPNOW_EVT_PUBLIC_NOTIFY ){
+  //}else if( ev == ESPNOW_EVT_PUBLIC_NOTIFY ){
+  }else if( ev == ESPNOW_EVT_NOTIFY ){
     Serial.printf( "[PUBLIC NOTIFY %d]\n", id );
   }else if( ev == ESPNOW_EVT_DISCONNECTED ){
     Serial.printf( "[FALL %d]\n", id );
@@ -66,8 +67,8 @@ void espnow_handle(espnow_device_event_t ev, int id){
   }else if( ev == ESPNOW_EVT_RECIVE ){
     Serial.printf( "[RECIVE %d]\n", id );
     #ifdef ROBOT
-      if( ESPNOW_device.connections[0].frame_in.service == ESPNOW_DEVICE_CHANNEL_SERVICE && ESPNOW_device.connections[0].frame_out.len >= sizeof(int)*2 ){
-        int *CH = (int*) ESPNOW_device.connections[0].frame_in.body;
+      if( ESPNOW_device.Connections[0].frame.service == ESPNOW_DEVICE_CHANNEL_SERVICE && ESPNOW_device.frame_out.len >= sizeof(int)*2 ){
+        int *CH = (int*) ESPNOW_device.Connections[0].frame.body;
         motor.diff_drive(CH[0], CH[1], false, true);
         Serial.printf( "CH: %d\t%d\n\n", CH[0], CH[1] );
       }
@@ -85,17 +86,17 @@ void setup() {
   Serial.begin(115200);
   Serial.setTimeout(20);
 
-  ESPNOW_device.set_led( 2 );
+  //ESPNOW_device.set_led( 2 );
   ESPNOW_device.set_handle_function( espnow_handle );
-  ESPNOW_device.connections[0].waiting_ms_disconnect = 500;
+  //ESPNOW_device.connections[0].waiting_ms_disconnect = 500;
 
   #ifdef ROBOT
     // ESPNOW_device
     Serial.println( "======== ESPNOW Device Server ========" );
-    ESPNOW_device.set_led( 2 );
+    //ESPNOW_device.set_led( 2 );
     ESPNOW_device.set_handle_function( espnow_handle );
     ESPNOW_device.begin_server( "ROBOT", "1324" );
-    ESPNOW_device.connections[0].delay_ms_notify = 200;
+    //ESPNOW_device.Connections[0].delay_ms_notify = 200;
     // Begin Motors
     motor.begin();
     motor.sound_vol(12);
@@ -113,6 +114,6 @@ void setup() {
 
 void loop() {
   
-  ESPNOW_device.update();
+  ESPNOW_device.loop();
 
 }
