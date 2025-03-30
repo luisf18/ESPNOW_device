@@ -17,12 +17,6 @@
 #define ESPNOW_DEVICE__BODY_SIZE       210
 #define ESPNOW_DEVICE__MIN_SIZE        255 - ESPNOW_DEVICE__BODY_SIZE
 
-#define ESPNOW_DEVICE__CHECK_MAC( M1, M2 ) ( memcmp( M1, M2, 6 ) == 0 )
-#define ESPNOW_DEVICE__CHECK_NAME( N1, N2 ) ( strcmp( N1, N2 ) == 0 )
-#define ESPNOW_DEVICE__COPY_NAME( X, Y ){ strncpy( X, Y, ESPNOW_DEVICE__NAME_SIZE ); }
-#define ESPNOW_DEVICE__COPY_MAC( X, Y ) { memcpy( X, Y, 6 ); }
-#define ESPNOW_DEVICE__COPY_PASSWORD( X, Y ){ strncpy( X, Y, 16 ); }
-
 enum espnow_device_event_t{
   ESPNOW_DEVICE__EVT_NULL = 0,           // nenhuma ação
   ESPNOW_DEVICE__EVT_SEND,               // [update ou asincrono] chamada assincrona ou timer write
@@ -60,6 +54,60 @@ void espnow_device_recive(const uint8_t * mac,const uint8_t *data, int len);
 void espnow_device_recive( uint8_t * mac, uint8_t *data, uint8_t len);
 #endif
 
+struct ESPNOW_device_t{
+  uint8_t  mac[8];
+  char     name[ESPNOW_DEVICE__NAME_SIZE];
+  char     password[16];
+  void send();
+  //void begin( const char *_name, const char *_password, const uint8_t *_mac = 0 );
+  //void send();
+  //void update_recive( espnow_device_frame_t *_frame );
+  void connect();
+  void connect( const uint8_t *mac );
+  void disconnect();
+  //bool auto_send();
+  //bool auto_disconnect();
+  //void check_mac( const uint8_t *_mac );
+  //void check_name( const char *_name )
+}
+
+class ESPNOW_device{
+  public:
+  cont char *name;
+  connections_t connections[...];
+  void begin();
+  void send();
+  void recive();
+  void loop();
+};
+
+class ESPNOW_local_server : public ESPNOW_device  {
+  public:
+  cont char *password;
+  void send(); // ...
+  void recive(); // ...
+};
+
+class ESPNOW_local_client : public ESPNOW_device  {
+  public:
+  ESPNOW_device_t servers[...]; // nome e senha
+  void send(); // ...
+  void recive(); // ...
+};
+
+class ESPNOW_remote_server : public ESPNOW_device  {
+  public:
+  void send(); // ...
+  void recive(); // ...
+};
+
+class ESPNOW_remote_client : public ESPNOW_device  {
+  public:
+  void send(); // ...
+  void recive(); // ...
+};
+
+
 //========================================================================================
 // Connection Class
 //========================================================================================
@@ -74,26 +122,17 @@ class ESPNOW_connection{
   uint32_t last_time_send = 0;
   uint32_t last_time_recive = 0;
   espnow_device_frame_t frame;
-  ESPNOW_connection(){}
-  ESPNOW_connection(const char *_name, const char *_password, const uint8_t *_mac = nullptr){
-    begin( _name, _password, _mac );
-  }
-  void begin( const char *_name, const char *_password, const uint8_t *_mac = nullptr );
-  void send();
-  void recive( espnow_device_frame_t *_frame );
+  //void begin( const char *_name, const char *_password, const uint8_t *_mac = 0 );
+  //void send();
+  //void update_recive( espnow_device_frame_t *_frame );
   void connect();
   void connect( const uint8_t *mac );
   void disconnect();
-  bool send_timeout();
-  bool auto_disconnect();
-  bool loop();
+  //bool auto_send();
+  //bool auto_disconnect();
+  //void check_mac( const uint8_t *_mac );
+  //void check_name( const char *_name )
 };
-
-//typedef struct{
-//  char name[ESPNOW_DEVICE__NAME_SIZE];
-//  char password[16];
-//  uint8_t mac[6];
-//} ESPNOW_DEVICE_server_credentials_t;
 
 //========================================================================================
 // ESPNOW DEVICE
@@ -105,32 +144,16 @@ class ESPNOW_DEVICE{
 
   public:
 
-    // caracteristicas do device local
     bool      Server = false;
     char      name[16] = "";
     char      password[16] = "";
+    uint8_t   connection_simultaneous = 1; // quantidade de conexões simultaneas
+    uint8_t   connection_count = 0; // contagem de conexões abertas
     bool      Notify = false;
-    bool      Scanning = false;
     uint32_t  send_delay = 50;
     bool      auto_disconnect = false;
     uint32_t  disconnect_delay = 1000;
-    
-    // conexão
-    uint8_t   connection_simultaneous = 1; // quantidade de conexões simultaneas
-    uint8_t   connection_count = 0; // contagem de conexões abertas
-    uint8_t   connection_servers_len = 0; // contagem de conexões server salvas
-    ESPNOW_connection connections[ESPNOW_DEVICE__MAX_CONNECTIONS];
-    ESPNOW_connection broadcast = ESPNOW_connection( "Broadcast", 0, espnow_device__broadcast_mac );
-    espnow_device_frame_t frame;
-    //ESPNOW_connection (*connections_order)[ESPNOW_DEVICE__MAX_CONNECTIONS];
-    
-    bool LOG = true;
-
-    // [futuro] adiconar futuramente uma lista extendida
-    //   somente para o client: lista de servers que pode se conectar
-    //uint8_t server_list_len = 0;
-    //ESPNOW_DEVICE_server_credentials_t *server_list = nullptr;
-    //bool set_server_list()
+    bool      LOG = true;
 
     //----------------------------------------------------------------------------------------
     // Handler events
@@ -140,8 +163,15 @@ class ESPNOW_DEVICE{
     //void call( espnow_device_event_t EVT, int id ){ if( handle != nullptr ) handle(EVT,id);  }
     
     void (*handle)(espnow_device_event_t,ESPNOW_connection*) = nullptr;
-    void set_handler(void (*f)(espnow_device_event_t,ESPNOW_connection*)){ handle = f; }
+    void set_handle_function(void (*f)(espnow_device_event_t,ESPNOW_connection*)){ handle = f; }
     void call( espnow_device_event_t EVT, ESPNOW_connection* cnn ){ if( handle != nullptr ) handle(EVT,cnn);  }
+
+    //----------------------------------------------------------------------------------------
+    // connexões
+    //----------------------------------------------------------------------------------------
+
+    ESPNOW_connection connections[ESPNOW_DEVICE__MAX_CONNECTIONS];
+    ESPNOW_connection broadcast;
 
     //----------------------------------------------------------------------------------------
     // begin
@@ -189,15 +219,15 @@ class ESPNOW_DEVICE{
 
       // diagnostico
       Serial.println( "[ESPNOW Device] init!" );
-      Serial.printf( "[Local %s][ %s ][MAC: %s][Channel: %d]\n", Server ? "Server" : "Client", name, WiFi.macAddress().c_str(), espnow_device_get_channel() );
+      Serial.printf( "[Local %s][ %s ][MAC: %s][Channel: %d]\n", Server ? "Server" : "Client", name, WiFi.macAddress(), espnow_device_get_channel() );
 
       // callback espnow
       esp_now_register_recv_cb(espnow_device_recive);
 
       // connecta ao broadcast
-      //if( Notify ){
+      if( Notify ){
         broadcast.connect();
-      //}
+      }
 
       Init = true;
 
@@ -214,61 +244,16 @@ class ESPNOW_DEVICE{
     }
 
     //----------------------------------------------------------------------------------------
-    // adicionar servers (só pra clients)
-    //----------------------------------------------------------------------------------------
-
-    bool add_server( const char *_name, const char *_password ){
-      if( connection_servers_len >= ESPNOW_DEVICE__MAX_CONNECTIONS ) return false;
-      connections[connection_servers_len].begin( _name, _password );
-      return true;
-    }
-
-    //----------------------------------------------------------------------------------------
     // gerenciador de listas de conexões
     //----------------------------------------------------------------------------------------
 
-    void close_all_connections(){
-      for(int i=0;i<connection_count;i++) connections[i].disconnect();
-      connection_count = 0;
+    bool available_connection(){
+      for(int i=0;i<)
     }
 
-    // only for server
-    ESPNOW_connection *available_connection(){
-      for(int i=0;i<connection_simultaneous;i++){
-        if( !connections[i].connected ) return connections+i;
-      }
-      return nullptr;
-    }
+    bool add_connection( const char *_name, const char *_password ){
 
-    ESPNOW_connection *search_client( const char *_name ){
-      for(int i=0;i<connection_simultaneous;i++){
-        if( !connections[i].connected ) continue;
-        if( strcmp( connections[i].name, _name ) == 0 ) return connections+i;
-      }
-      return nullptr;
     }
-
-    ESPNOW_connection *search_server( const char *_name ){
-      for(int i=0;i<connection_servers_len;i++){
-        if( strcmp( connections[i].name, _name ) == 0 ) return connections+i;
-      }
-      return nullptr;
-    }
-
-    void send( const uint8_t *mac ){
-      ESPNOW_DEVICE__COPY_NAME( frame.name, name );
-      esp_now_send( mac, (uint8_t*) &frame, constrain( ESPNOW_DEVICE__MIN_SIZE + frame.len, 0, 250 ) );
-    }
-
-    //ESPNOW_connection *search_connection( const char *_name, bool open_olny ){
-    //  for(int i=0;i<ESPNOW_DEVICE__MAX_CONNECTIONS;i++){
-    //    if( open_olny ){
-    //      if( !connections[i].connected ) continue;
-    //    }
-    //    if( strcmp( connections[i].name, _name ) == 0 ) return connections+i;
-    //  }
-    //  return nullptr;
-    //}
 
     //----------------------------------------------------------------------------------------
     // loop
@@ -276,19 +261,45 @@ class ESPNOW_DEVICE{
 
     void loop(){
       if( !Init ) return;
+      /*/
       if( connection_count ){
-        int n = connection_count;
-        for( int i=0; i<n; i++ ){
-          if(connections[i].loop()) connection_count--;
+        for( int i=0; i<connection_count; i++ ){
+          if( connections[i].connected ){
+            if( connections[i].auto_disconnect() ){
+              call( ESPNOW_DEVICE__EVT_DISCONNECTED, i );
+            }else if( connections[i].time_to_send() ){
+              call( ESPNOW_DEVICE__EVT_SEND, i );
+              connections[i].send();
+            }
+          }
         }
       }else{
         if( Notify ){
-          if( broadcast.send_timeout() ){
-            call( ESPNOW_DEVICE__EVT_NOTIFY, &broadcast );
+          if( broadcast.time_to_send() ){
+            call( ESPNOW_DEVICE__EVT_NOTIFY, -1 );
             broadcast.send();
           }
         }
       }
+      /*/
+    }
+
+    //----------------------------------------------------------------------------------------
+    // begin_connection -> inicia um objeto connection com os dados passados
+    // close_connection
+    // close_all_connections
+    //----------------------------------------------------------------------------------------
+
+    /*/
+    static inline void check_name( const uint8_t *_name ){
+      return ( strcmp( name, _name ) == 0 );
+    }
+    /*/
+
+    bool close_all_connections(){
+      for(int i=0;i<connection_count;i++) connections[i].disconnect();
+      connection_count = 0;
+      return true;
     }
     
 
@@ -297,75 +308,68 @@ class ESPNOW_DEVICE{
     // ------------------------------------------------------------------------------------
     void recive(const uint8_t * mac, const uint8_t *data, int len){
       
-      //if( !Init ) return;
-      //if( len < ESPNOW_DEVICE__MIN_SIZE ) return;
+      /*/
+      if( !Init ) return;
+      if( len < ESPNOW_DEVICE__MIN_SIZE ) return;
       
       // logging
-      Serial.printf( "\n\n->[DEVICE][recive][%s][%d]\n", mac2str(mac).c_str(), len );
+      //Serial.printf( "\n\n->[DEVICE][recive][%s][%d]\n", mac2str(mac).c_str(), len );
 
       // converte para o formato do protocolo
       #ifdef ESP8266
-        espnow_device_frame_t _Frame;
-        espnow_device_frame_t *Frame = &_Frame;
-        memcpy( (uint8_t*)Frame, data, len );
+        espnow_device_frame_t _pack;
+        espnow_device_frame_t *pack = &_pack;
+        memcpy( (uint8_t*)pack, data, len );
       #else
-        espnow_device_frame_t *Frame = (espnow_device_frame_t*) data;
+        espnow_device_frame_t *pack = (espnow_device_frame_t*) data;
       #endif
 
       // logging
-      Serial.printf( "[DEVICE][RECIVE][Frame][name: %s][code: %d ][connection counter: %d ]\n", Frame->name, Frame->code, connection_count );
+      //Serial.printf( "[DEVICE][RECIVE][Frame][name: %s][code: %d ][connection counter: %d ]\n", pack->name, pack->code, connections_count );
 
       // verifica o codigo de identificação do protocolo
-      if( Frame->code != ESPNOW_DEVICE__CODE ) return;
+      if( pack->code != ESPNOW_DEVICE__CODE ) return;
 
-      //ESPNOW_connection *cnn = search_connection(Frame->name,Server);
-      ESPNOW_connection *cnn = nullptr;
+      int i = search_connection(pack->name,Server);
 
       if( Server ){
-        cnn = search_client( Frame->name );
         // caso a conexão ja esteja estabelecida
-        if( cnn ){
+        if( i>=0 ){
           // achou uma conexão aberta
-          if( !ESPNOW_DEVICE__CHECK_MAC( cnn->mac, mac ) ) return;
+          if(!connections[i].check_mac( mac )) return;
           //decode( pack ); // decodifica a msg usando a senha local
-          if(!ESPNOW_DEVICE__CHECK_NAME( Frame->name_rx, name ) ) return;
-          cnn->recive( Frame );
+          if(!check_name( pack->name_rx )) return;
+          connections[i].update_recive( pack );
         }else{
           //decode( pack ); // decodifica a msg usando a senha local
-          if(!ESPNOW_DEVICE__CHECK_NAME( Frame->name_rx, name ) ) return;
-          cnn = available_connection(); // busca uma conexão
-          if( !cnn ) return;
-          cnn->begin( Frame->name, password, mac ); // inicia uma conexão com client usando a senha local
-          cnn->connect();
-          connection_count++;
-          cnn->recive( Frame );
-          call( ESPNOW_DEVICE__EVT_CONNECTED, cnn );
+          if(!check_name( pack->name_rx )) return;
+          i = connection_available(); // busca uma conexão
+          if( i<0 ) return;
+          connections[i].begin( pack->name, password, mac );
+          connections[i].connect();
+          connections[i].update_recive( pack );
+          call( ESPNOW_DEVICE__EVT_CONNECTED, i );
         }
       }else{
         // Client
-        cnn = search_server( Frame->name );
-        if( !cnn ){ // se não etiver na lista não connecta
-          if( Scanning ){
-            ESPNOW_connection temp;
-            temp.frame = *Frame;
-            temp.begin( Frame->name, 0, mac );
-            call( ESPNOW_DEVICE__EVT_SCAN_FOUND, &temp );
-          }
-          return;
-        }
-        if( !cnn->connected ){
+        // busca conexões com esse nome
+        int i = search_connection(pack->name,false);
+        if( i<0 ) return;
+        if( !connections[i].connected ){
           // tenta conectar
           if( connection_count >= connection_simultaneous ) return;
-          cnn->connect(mac);
-          connection_count++;
-          //connections[i].decode( pack ); // decodifica a msg usando a senha do server
-          cnn->recive( Frame );
+          connections[i].connect(mac);
+          //decode( pack ); // decodifica a msg usando a senha do server
+          connections[i].update_recive( pack );
+        }
           // achou uma conexão na lista
-          call( ESPNOW_DEVICE__EVT_CONNECTED, cnn );
+          call( ESPNOW_DEVICE__EVT_CONNECTED, i );
         }
       }
-      call( ESPNOW_DEVICE__EVT_RECIVE, cnn );
+      call( ESPNOW_DEVICE__EVT_RECIVE, i );
+      /*/
     }
+    
 };
 
 ESPNOW_DEVICE ESPNOW_device;
@@ -381,52 +385,51 @@ void ESPNOW_connection::connect(){
   sei();
 }
 void ESPNOW_connection::connect( const uint8_t *_mac ){
-  ESPNOW_DEVICE__COPY_MAC( mac, _mac );
+  memcpy( mac, _mac, 6 );
   connect();
 }
 void ESPNOW_connection::disconnect(){
-  cli();
   connected = false;
   espnow_device_close_peer( mac );
-  sei();
-  ESPNOW_device.call( ESPNOW_DEVICE__EVT_DISCONNECTED, this );
 }
-void ESPNOW_connection::begin( const char *_name, const char *_password, const uint8_t *_mac ){
-  if( _mac ) ESPNOW_DEVICE__COPY_MAC( mac, _mac );
-  if( _password ) ESPNOW_DEVICE__COPY_PASSWORD( password, _password );
-  ESPNOW_DEVICE__COPY_NAME( name, _name );
-}
-void ESPNOW_connection::recive( espnow_device_frame_t *_frame ){
-  frame = *_frame;
-  last_time_recive = millis();
-  recived = true;
-}
+/*/
 void ESPNOW_connection::send(){
-  ESPNOW_DEVICE__COPY_NAME( ESPNOW_device.frame.name_rx, name );
-  // encode( password )
-  ESPNOW_device.send( mac );
+  strncpy( ESPNOW_device.frame.name, ESPNOW_device.name, ESPNOW_DEVICE__NAME_SIZE );
+  strncpy( ESPNOW_device.frame.name_rx, name, ESPNOW_DEVICE__NAME_SIZE );
+  esp_now_send( mac, (uint8_t*)&ESPNOW_device.frame, constrain( ESPNOW_DEVICE__MIN_SIZE + ESPNOW_device.frame.len, 0, 250 ) );
   last_time_send = millis();
 }
-bool ESPNOW_connection::send_timeout(){
-  return ( (millis() - last_time_send) > ESPNOW_device.send_delay );
+void ESPNOW_connection::update_recive( espnow_device_frame_t *_frame ){
+  frame = *_frame;
+  last_time_send = millis();
+  recived = true;
+}
+void begin( const char *_name, const char *_password, const uint8_t *_mac = 0 ){
+  if( _mac ) memcpy( mac, _mac, 6 );
+  if( _password ) strcpy( password, _password, 16 );
+  srtncpy( name, _name, ESPNOW_DEVICE__NAME_SIZE );
+}
+void ESPNOW_connection::check_mac( const uint8_t *_mac ){
+  return ( memcmp( mac, _mac, 6 ) == 0 );
+}
+bool ESPNOW_connection::check( espnow_device_frame_t *_frame, const uint8_t *_mac ){
+  if( !check_mac(_mac) ) return false;
+  if( !check_mac(_frame) ) return false;
+}
+bool ESPNOW_connection::auto_send(){
+  return ( (millis() - last_time_send) > ESPNOW_DEVICE.send_delay );
 }
 bool ESPNOW_connection::auto_disconnect(){
-  if( (millis() - last_time_recive) > ESPNOW_device.disconnect_delay ){
+  if( (millis() - last_time_recive) > ESPNOW_DEVICE.disconnect_delay ){
     disconnect();
     return true;
   }
   return false;
 }
-
-// só retorna true se desconectar
-bool ESPNOW_connection::loop(){
-  if( !connected ) return false;
-  if( send_timeout() ){
-    ESPNOW_device.call( ESPNOW_DEVICE__EVT_SEND, this );
-    send();
-  }
-  return auto_disconnect();
+bool ESPNOW_connection::check_name( const char *_name ){
+  return ( strcmp( name, _name, 6 ) == 0 );
 }
+/*/
 
 // ===============================================================================
 // External callback functions
