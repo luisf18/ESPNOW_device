@@ -94,7 +94,6 @@ class ESPNOW_connection{
   bool send_timeout();
   bool auto_disconnect();
   bool loop();
-  uint8_t *service();
 };
 
 //typedef struct{
@@ -139,10 +138,6 @@ class ESPNOW_DEVICE{
     //uint8_t server_list_len = 0;
     //ESPNOW_DEVICE_server_credentials_t *server_list = nullptr;
     //bool set_server_list()
-
-    uint8_t * service(){
-      return (uint8_t *)(&frame.service);
-    }
 
     //----------------------------------------------------------------------------------------
     // Handler events
@@ -457,10 +452,6 @@ bool ESPNOW_connection::loop(){
     send();
   }
   return auto_disconnect();
-}
-
-uint8_t * ESPNOW_connection::service(){
-  return (uint8_t *)(&frame.service);
 }
 
 // ===============================================================================
