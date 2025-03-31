@@ -4,10 +4,41 @@
 
 void espnow_handler( espnow_device_event_t evt, ESPNOW_connection *cn ){
   switch( evt ){
-    case ESPNOW_DEVICE__EVT_NULL:         Serial.println("[NULL]");         break;
-    case ESPNOW_DEVICE__EVT_SEND:         Serial.println("[SEND]");         break;
-    case ESPNOW_DEVICE__EVT_NOTIFY:       Serial.println("[NOTIFY]");       break;
-    case ESPNOW_DEVICE__EVT_RECIVE:       Serial.printf("[RECIVE][ %s ]\n",cn->name);       break;
+    case ESPNOW_DEVICE__EVT_NULL:   Serial.println("[NULL]");   break;
+
+    case ESPNOW_DEVICE__EVT_NOTIFY: Serial.println("[NOTIFY]"); break;
+    
+    case ESPNOW_DEVICE__EVT_SEND:
+      Serial.println("[SEND]"); 
+      // init
+      ESPNOW_device.frame.service = ESPNOW_SERVICE::RADIO;
+      ESPNOW_device.frame.len     = sizeof( ESPNOW_SERVICE::radio_t );
+      ESPNOW_device.frame.radio.device_type = ESPNOW_SERVICE::devices::ROBOT_DIF_2W;
+      // Battery
+      ESPNOW_device.frame.radio.battery.id = ESPNOW_SERVICE::battery_t::LiPo;
+      ESPNOW_device.frame.radio.battery.cells   = 2;
+      ESPNOW_device.frame.radio.battery.level   = 100;
+      ESPNOW_device.frame.radio.battery.voltage = 10;
+      ESPNOW_device.frame.radio.battery.current = 0.1;
+      ESPNOW_device.frame.radio.battery.temp    = 30;
+      // MCU
+      ESPNOW_device.frame.radio.mcu.id = ESPNOW_SERVICE::mcu_t::MCU_ESP32;
+      ESPNOW_device.frame.radio.mcu.voltage_mV = 3300;
+      ESPNOW_device.frame.radio.mcu.current_mA = 0;
+      ESPNOW_device.frame.radio.mcu.temp       = 30;
+    break;
+
+    case ESPNOW_DEVICE__EVT_RECIVE:
+      Serial.printf("[RECIVE][ %s ][ %d | %d bytes ]\n",cn->name,cn->frame.service,cn->frame.len );
+      if( cn->frame.service == ESPNOW_SERVICE::RADIO_LEGACY ){
+        //int *CH = (int*) cn->frame.body;
+        Serial.print("[ "); for(int i=0;i<8;i++) Serial.printf("%d ", cn->frame.ch[i] ); Serial.println("]");
+        //Serial.print("[ "); for(int i=0;i<8;i++) Serial.printf("%d ", CH[i] ); Serial.println("]");
+        //Serial.print("[ "); for(int i=0;i<8;i++) Serial.printf("%02X ", cn->frame.body[i] ); Serial.println("]");
+      }else{
+        Serial.printf("[Serviço desconhecido ou inesperado]\n" );
+      }
+    break;
     case ESPNOW_DEVICE__EVT_CONNECTED:    Serial.printf("[CONNECTED][ %s ]\n",cn->name);    break;
     case ESPNOW_DEVICE__EVT_DISCONNECTED: Serial.printf("[DISCONNECTED][ %s ]\n",cn->name); break;
     case ESPNOW_DEVICE__EVT_SCAN_FOUND:
@@ -16,8 +47,16 @@ void espnow_handler( espnow_device_event_t evt, ESPNOW_connection *cn ){
   }
 }
 
+#define POINTER_TO_U32( p ) ( (uint32_t) p )
+
 void setup() {
   Serial.begin(115200);
+  espnow_device_frame_t frame;
+  Serial.println( POINTER_TO_U32( &frame.len ) );
+  //Serial.println( POINTER_TO_U32( frame.ch ) );
+  Serial.println( POINTER_TO_U32( frame.body ) );
+  //Serial.println( POINTER_TO_U32( &frame.ch[0] ) );
+  Serial.println( POINTER_TO_U32( &frame.body[0] ) );
   #ifdef SERVER
     ESPNOW_device.set_handler( espnow_handler );
     ESPNOW_device.begin_server("ROBOT","1234",1);

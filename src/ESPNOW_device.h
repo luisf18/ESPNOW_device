@@ -15,7 +15,7 @@
 #define ESPNOW_DEVICE__CODE            18555 //2108 // codigo de identificação do protocolo
 #define ESPNOW_DEVICE__NAME_SIZE       16
 #define ESPNOW_DEVICE__BODY_SIZE       210
-#define ESPNOW_DEVICE__MIN_SIZE        255 - ESPNOW_DEVICE__BODY_SIZE
+#define ESPNOW_DEVICE__MIN_SIZE        39
 
 #define ESPNOW_DEVICE__CHECK_MAC( M1, M2 ) ( memcmp( M1, M2, 6 ) == 0 )
 #define ESPNOW_DEVICE__CHECK_NAME( N1, N2 ) ( strcmp( N1, N2 ) == 0 )
@@ -37,18 +37,25 @@ enum espnow_device_event_t{
 // Struct
 //========================================================================================
 
-typedef struct{
+// [ service, len, service, len, 
+
+typedef struct __attribute__((packed)){
   // HEADER CODE [ 2 Bytes ] --------------------------------------------------------------
   uint16_t code        = ESPNOW_DEVICE__CODE; // codigo de identificação       [  2 Bytes ]
   // HEADER [ 22 Bytes ] ------------------------------------------------------------------
-  char     name[ESPNOW_DEVICE__NAME_SIZE] = "ROBOT";  // Nome do dispositivo origem    [ 15 Bytes ]
+  char     name[ESPNOW_DEVICE__NAME_SIZE] = "ROBOT";  // Nome do dispositivo origem    [ 16 Bytes ]
   // HEADER LOCK [ 19 Bytes ] -------------------------------------------------------------
   uint16_t random      = 0;                  // Dados de segurança da conexão [  2 Bytes ]
-  char     name_rx[ESPNOW_DEVICE__NAME_SIZE] = "RX"; // Dispositivo destino    [ 15 Bytes ]
+  char     name_rx[ESPNOW_DEVICE__NAME_SIZE] = "RX"; // Dispositivo destino    [ 16 Bytes ]
   // Body (carga util) [ 214 Bytes ] ------------------------------------------------------
-  uint16_t service     = 0;                  // identificador do serviço      [  2 Bytes ]
-  uint8_t  len         = 0;                  // tamanho da carga              [ *2 Bytes ]
-  uint8_t  body[ESPNOW_DEVICE__BODY_SIZE]; //                               [ 0-200 Bytes ]
+  uint16_t service     = 0;                  // identificador do serviço      [ 2 Bytes ]
+  uint8_t  len         = 0;                  // tamanho da carga              [ 1 Byte  ]
+  //uint8_t body[ESPNOW_DEVICE__BODY_SIZE];   // [ 0-200 Bytes ]
+  union{
+    uint8_t body[ESPNOW_DEVICE__BODY_SIZE];   // [ 0-210 Bytes ]
+    int     ch[52];
+    ESPNOW_SERVICE::radio_t radio;
+  };
 }espnow_device_frame_t;
 
 //========================================================================================
@@ -87,6 +94,7 @@ class ESPNOW_connection{
   bool send_timeout();
   bool auto_disconnect();
   bool loop();
+  uint8_t *service();
 };
 
 //typedef struct{
@@ -131,6 +139,10 @@ class ESPNOW_DEVICE{
     //uint8_t server_list_len = 0;
     //ESPNOW_DEVICE_server_credentials_t *server_list = nullptr;
     //bool set_server_list()
+
+    uint8_t * service(){
+      return (uint8_t *)(&frame.service);
+    }
 
     //----------------------------------------------------------------------------------------
     // Handler events
@@ -224,6 +236,16 @@ class ESPNOW_DEVICE{
     }
 
     //----------------------------------------------------------------------------------------
+    // preparar a carga
+    //----------------------------------------------------------------------------------------
+
+    void load( uint16_t service, const uint8_t *p, uint8_t len ){
+      frame.service = service;
+      frame.len = constrain( len, 0, ESPNOW_DEVICE__BODY_SIZE );
+      memcpy( frame.body, p, frame.len );
+    }
+
+    //----------------------------------------------------------------------------------------
     // gerenciador de listas de conexões
     //----------------------------------------------------------------------------------------
 
@@ -297,11 +319,11 @@ class ESPNOW_DEVICE{
     // ------------------------------------------------------------------------------------
     void recive(const uint8_t * mac, const uint8_t *data, int len){
       
-      //if( !Init ) return;
-      //if( len < ESPNOW_DEVICE__MIN_SIZE ) return;
+      if( !Init ) return;
+      if( len < ESPNOW_DEVICE__MIN_SIZE ) return;
       
       // logging
-      Serial.printf( "\n\n->[DEVICE][recive][%s][%d]\n", mac2str(mac).c_str(), len );
+      //Serial.printf( "\n\n->[DEVICE][recive][%s][%d]\n", mac2str(mac).c_str(), len );
 
       // converte para o formato do protocolo
       #ifdef ESP8266
@@ -313,7 +335,16 @@ class ESPNOW_DEVICE{
       #endif
 
       // logging
-      Serial.printf( "[DEVICE][RECIVE][Frame][name: %s][code: %d ][connection counter: %d ]\n", Frame->name, Frame->code, connection_count );
+      Serial.printf(
+        "\n[%s - %s][%d][ %d/%d ][code: %d ][service: %d ] ",
+        mac2str(mac).c_str(),
+        Frame->name,
+        len,
+        connection_count,
+        connection_simultaneous,
+        Frame->code,
+        Frame->service
+      );
 
       // verifica o codigo de identificação do protocolo
       if( Frame->code != ESPNOW_DEVICE__CODE ) return;
@@ -426,6 +457,10 @@ bool ESPNOW_connection::loop(){
     send();
   }
   return auto_disconnect();
+}
+
+uint8_t * ESPNOW_connection::service(){
+  return (uint8_t *)(&frame.service);
 }
 
 // ===============================================================================
