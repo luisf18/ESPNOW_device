@@ -121,6 +121,7 @@ class ESPNOW_DEVICE{
     uint32_t  send_delay = 50;
     bool      auto_disconnect = false;
     uint32_t  disconnect_delay = 1000;
+    uint32_t  client_init_connection_delay = 100;
     
     // conexão
     uint8_t   connection_simultaneous = 1; // quantidade de conexões simultaneas
@@ -131,7 +132,12 @@ class ESPNOW_DEVICE{
     espnow_device_frame_t frame;
     //ESPNOW_connection (*connections_order)[ESPNOW_DEVICE__MAX_CONNECTIONS];
     
-    bool LOG = true;
+    // ### ESPNOW DEVICE logging level
+    // - 0: no logging
+    // - 1: init and begin log
+    // - 2: (1) and connect/disconnect log
+    // - 3: (2) and recive and send log
+    uint8_t log_level = 1;
 
     // [futuro] adiconar futuramente uma lista extendida
     //   somente para o client: lista de servers que pode se conectar
@@ -168,7 +174,7 @@ class ESPNOW_DEVICE{
       init();
     }
 
-    void begin_client( const char * _name = "CLIENT", uint8_t Simultaneous_connections = 1, uint32_t _send_delay = 50, uint32_t _disconnect_delay = 0 ){
+    void begin_client( const char * _name = "CLIENT", uint8_t Simultaneous_connections = 1, uint32_t _send_delay = 50, uint32_t _disconnect_delay = 1000 ){
       Server = false;
       connection_simultaneous = Simultaneous_connections;
       Notify = false;
@@ -186,7 +192,9 @@ class ESPNOW_DEVICE{
       WiFi.mode(WIFI_STA);
       //ESP_ERROR_CHECK( esp_wifi_set_channel(espnow_device_channel,WIFI_SECOND_CHAN_NONE) );
       if(esp_now_init() != 0){
-        Serial.println( "[ESPNOW Device] Error initializing ESP-NOW!" );
+        if( log_level ){
+          Serial.println( "[ESPNOW Device] Error initializing ESP-NOW!" );
+        }
         return false;
       }
 
@@ -194,9 +202,11 @@ class ESPNOW_DEVICE{
       esp_now_set_self_role(ESP_NOW_ROLE_COMBO);
       #endif
 
-      // diagnostico
-      Serial.println( "[ESPNOW Device] init!" );
-      Serial.printf( "[Local %s][ %s ][MAC: %s][Channel: %d]\n", Server ? "Server" : "Client", name, WiFi.macAddress().c_str(), espnow_device_get_channel() );
+      // logging
+      if( log_level ){
+        Serial.println( "[ESPNOW Device] init!" );
+        Serial.printf( "[Local %s][ %s ][MAC: %s][Channel: %d]\n", Server ? "Server" : "Client", name, WiFi.macAddress().c_str(), espnow_device_get_channel() );
+      }
 
       // callback espnow
       esp_now_register_recv_cb(espnow_device_recive);
@@ -227,6 +237,7 @@ class ESPNOW_DEVICE{
     bool add_server( const char *_name, const char *_password ){
       if( connection_servers_len >= ESPNOW_DEVICE__MAX_CONNECTIONS ) return false;
       connections[connection_servers_len].begin( _name, _password );
+      connection_servers_len++;
       return true;
     }
 
@@ -272,9 +283,19 @@ class ESPNOW_DEVICE{
       return nullptr;
     }
 
-    void send( const uint8_t *mac ){
+    void send( const uint8_t *_mac ){
       ESPNOW_DEVICE__COPY_NAME( frame.name, name );
-      esp_now_send( mac, (uint8_t*) &frame, constrain( ESPNOW_DEVICE__MIN_SIZE + frame.len, 0, 250 ) );
+      // logging
+      if( log_level >= 3 ){
+        Serial.printf(
+          "--ESPNOW: [ send %s %s %d %d ]\n",
+          mac2str(_mac).c_str(),
+          frame.name_rx,
+          frame.service,
+          frame.len
+        );
+      }
+      esp_now_send( _mac, (uint8_t*) &frame, constrain( ESPNOW_DEVICE__MIN_SIZE + frame.len, 0, 250 ) );
     }
 
     //ESPNOW_connection *search_connection( const char *_name, bool open_olny ){
@@ -313,12 +334,8 @@ class ESPNOW_DEVICE{
     // callback
     // ------------------------------------------------------------------------------------
     void recive(const uint8_t * mac, const uint8_t *data, int len){
-      
       if( !Init ) return;
       if( len < ESPNOW_DEVICE__MIN_SIZE ) return;
-      
-      // logging
-      //Serial.printf( "\n\n->[DEVICE][recive][%s][%d]\n", mac2str(mac).c_str(), len );
 
       // converte para o formato do protocolo
       #ifdef ESP8266
@@ -330,16 +347,19 @@ class ESPNOW_DEVICE{
       #endif
 
       // logging
-      Serial.printf(
-        "\n[%s - %s][%d][ %d/%d ][code: %d ][service: %d ] ",
-        mac2str(mac).c_str(),
-        Frame->name,
-        len,
-        connection_count,
-        connection_simultaneous,
-        Frame->code,
-        Frame->service
-      );
+      if( log_level >= 3 ){
+        Serial.printf(
+          "\n--ESPNOW: [ recive %s %s (%d) >> %s ][%d:%d][%d/%d]\n",
+          mac2str(mac).c_str(),
+          Frame->name,
+          len,
+          Frame->name_rx,
+          Frame->code,
+          Frame->service,
+          connection_count,
+          connection_simultaneous
+        );
+      }
 
       // verifica o codigo de identificação do protocolo
       if( Frame->code != ESPNOW_DEVICE__CODE ) return;
@@ -349,14 +369,8 @@ class ESPNOW_DEVICE{
 
       if( Server ){
         cnn = search_client( Frame->name );
-        // caso a conexão ja esteja estabelecida
-        if( cnn ){
-          // achou uma conexão aberta
-          if( !ESPNOW_DEVICE__CHECK_MAC( cnn->mac, mac ) ) return;
-          //decode( pack ); // decodifica a msg usando a senha local
-          if(!ESPNOW_DEVICE__CHECK_NAME( Frame->name_rx, name ) ) return;
-          cnn->recive( Frame );
-        }else{
+        // caso a conexão não esteja estabelecida
+        if( !cnn ){
           //decode( pack ); // decodifica a msg usando a senha local
           if(!ESPNOW_DEVICE__CHECK_NAME( Frame->name_rx, name ) ) return;
           cnn = available_connection(); // busca uma conexão
@@ -366,11 +380,26 @@ class ESPNOW_DEVICE{
           connection_count++;
           cnn->recive( Frame );
           call( ESPNOW_DEVICE__EVT_CONNECTED, cnn );
+          call( ESPNOW_DEVICE__EVT_RECIVE, cnn );
+          return;
         }
       }else{
         // Client
         cnn = search_server( Frame->name );
-        if( !cnn ){ // se não etiver na lista não connecta
+        if( cnn ){
+          if( !cnn->connected ){ // achou mas n esta conectado
+            // tenta conectar
+            if( connection_count >= connection_simultaneous ) return;
+            cnn->connect(mac);
+            connection_count++;
+            //connections[i].decode( pack ); // decodifica a msg usando a senha do server
+            cnn->recive( Frame );
+            // achou uma conexão na lista
+            call( ESPNOW_DEVICE__EVT_CONNECTED, cnn );
+            call( ESPNOW_DEVICE__EVT_RECIVE, cnn );
+            return;
+          }
+        }else{ // se não etiver na lista não connecta
           if( Scanning ){
             ESPNOW_connection temp;
             temp.frame = *Frame;
@@ -379,17 +408,13 @@ class ESPNOW_DEVICE{
           }
           return;
         }
-        if( !cnn->connected ){
-          // tenta conectar
-          if( connection_count >= connection_simultaneous ) return;
-          cnn->connect(mac);
-          connection_count++;
-          //connections[i].decode( pack ); // decodifica a msg usando a senha do server
-          cnn->recive( Frame );
-          // achou uma conexão na lista
-          call( ESPNOW_DEVICE__EVT_CONNECTED, cnn );
-        }
       }
+
+      // verifica o mac
+      if( !ESPNOW_DEVICE__CHECK_MAC( cnn->mac, mac ) ) return;
+      // verifica o destino
+      if(!ESPNOW_DEVICE__CHECK_NAME( Frame->name_rx, name ) ) return;
+      cnn->recive( Frame );
       call( ESPNOW_DEVICE__EVT_RECIVE, cnn );
     }
 };
@@ -405,6 +430,9 @@ void ESPNOW_connection::connect(){
   espnow_device_peer( mac );
   connected = true;
   sei();
+  if( ESPNOW_device.log_level >= 2 ){
+    Serial.printf( "--ESPNOW: [ connected %s ]\n", name );
+  }
 }
 void ESPNOW_connection::connect( const uint8_t *_mac ){
   ESPNOW_DEVICE__COPY_MAC( mac, _mac );
@@ -415,6 +443,9 @@ void ESPNOW_connection::disconnect(){
   connected = false;
   espnow_device_close_peer( mac );
   sei();
+  if( ESPNOW_device.log_level >= 2 ){
+    Serial.printf( "--ESPNOW: [ disconnected %s - timeout = %lu ms]\n", name, (millis() - last_time_recive) );
+  }
   ESPNOW_device.call( ESPNOW_DEVICE__EVT_DISCONNECTED, this );
 }
 void ESPNOW_connection::begin( const char *_name, const char *_password, const uint8_t *_mac ){

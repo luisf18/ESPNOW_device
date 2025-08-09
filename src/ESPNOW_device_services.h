@@ -4,6 +4,29 @@
 // ================================================================================
 // Serviços transportados na comunicação
 // ================================================================================
+
+// 0b 0001  0010  00000011
+//       |     |      |
+//       |     |      └── Modelo específico (ex: 3 = "SUMO_MINI_2024")
+//       |     └──────── Subcategoria (ex: 2 = "MINI")
+//       └────────────── Categoria (ex: 1 = "SUMO")
+
+// 0b 0  010  0000  00000000
+//    |    |     |         |
+//    |    |     |         └── Modelo específico (ex: 3 = "SUMO_MINI_2024")
+//    |    |     └──────────── Subcategoria (ex: 2 = "MINI")
+//    |    └────────────────── Categoria (ex: 2 = "RADIO_PISTOLA") (8 opções)
+//    └─────────────────────── Server (ex: 0 = "CLIENT" )
+
+// 0b 0  010  0000  00000000
+//    |    |     |         |
+//    |    |     |         └── Modelo específico (ex: 3 = "SUMO_MINI_2024")
+//    |    |     └──────────── Subcategoria (ex: 2 = "MINI")
+//    |    └────────────────── Categoria (ex: 2 = "RADIO_PISTOLA", "RADIO_DRONE", "RADIO_AEROMODELO" ) (8 opções)
+//    └─────────────────────── Server (ex: 0 = "CLIENT" )
+
+#define ESPNOW_DEVICE_SERVICE( SERVER, CATEGORIA, SUB_CATEGORIA, MODELO ) (  )
+
 namespace ESPNOW_SERVICE {
 
   enum devices{
@@ -109,7 +132,7 @@ namespace ESPNOW_SERVICE {
   } imu_t;
 
   typedef struct __attribute__((packed)){
-    uint8_t  type; // 0 = desativado, 1 = temperatura/umidade, 2 = pressão, etc.
+    uint8_t  mode; // 0 = desativado, 1 = temperatura/umidade, 2 = pressão, etc.
     int8_t   temperature; // graus
     uint8_t  humidity;    // 0 a 100%
     uint16_t pressure;
@@ -166,6 +189,21 @@ namespace ESPNOW_SERVICE {
     location_t location; // [ 19 bytes ] Estrutura para Localização (GPS ou Sistema Externo de Câmeras)
     env_t env;           // [ 5 bytes ] Sensores ambientais
     char msg[80];        // [ 80 bytes ] Mensagem de status ou debug
+
+    // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    // funções auxiliares
+    // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    void init( uint16_t _device, uint8_t _ch_mode = 0, uint8_t _imu = 0, uint8_t _location = 0, uint8_t _env = 0 ){
+      #ifdef ESP32
+      mcu.id = mcu_t::MCU_ESP32;
+      #endif
+      channels_mode = _ch_mode;
+      imu.mode      = _imu;
+      channels_mode = _ch_mode;
+      location.mode = _location;
+      env.mode      = _env;
+    }
+
   }radio_t;
 
 }
