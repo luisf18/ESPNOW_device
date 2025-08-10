@@ -224,10 +224,10 @@ class ESPNOW_DEVICE{
     // deinit
     void deinit(){
       Init = false;
+      close_all_connections();
       esp_now_deinit();
       WiFi.disconnect();
       WiFi.mode(WIFI_OFF);
-      close_all_connections();
     }
 
     //----------------------------------------------------------------------------------------
@@ -370,7 +370,7 @@ class ESPNOW_DEVICE{
       if( Server ){
         cnn = search_client( Frame->name );
         // caso a conexão não esteja estabelecida
-        if( !cnn ){
+        if( !cnn ){ 
           //decode( pack ); // decodifica a msg usando a senha local
           if(!ESPNOW_DEVICE__CHECK_NAME( Frame->name_rx, name ) ) return;
           cnn = available_connection(); // busca uma conexão
@@ -442,9 +442,10 @@ void ESPNOW_connection::disconnect(){
   cli();
   connected = false;
   espnow_device_close_peer( mac );
+  uint32_t dt = (millis() - last_time_recive);
   sei();
   if( ESPNOW_device.log_level >= 2 ){
-    Serial.printf( "--ESPNOW: [ disconnected %s - timeout = %lu ms]\n", name, (millis() - last_time_recive) );
+    Serial.printf( "--ESPNOW: [ disconnected %s - timeout = %lu ms]\n", name, dt );
   }
   ESPNOW_device.call( ESPNOW_DEVICE__EVT_DISCONNECTED, this );
 }
@@ -468,7 +469,10 @@ bool ESPNOW_connection::send_timeout(){
   return ( (millis() - last_time_send) > ESPNOW_device.send_delay );
 }
 bool ESPNOW_connection::auto_disconnect(){
-  if( (millis() - last_time_recive) > ESPNOW_device.disconnect_delay ){
+  cli();
+  uint32_t dt = (millis() - last_time_recive);
+  sei();
+  if( dt > ESPNOW_device.disconnect_delay ){
     disconnect();
     return true;
   }
